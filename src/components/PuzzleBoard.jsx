@@ -3,7 +3,7 @@ import axios from "axios";
 import "./PuzzleBoard.css";
 const url = "http://127.0.0.1:8000";
 
-const tileImages = {
+const images = {
   1: "/assets/number-1019717_1280.jpg",
   2: "/assets/number-1019719_1280.jpg",
   3: "/assets/number-1019720_1280.jpg",
@@ -17,14 +17,14 @@ const tileImages = {
 };
 
 const isSolvable = (tiles) => {
-  const inversions = tiles.reduce((count, current, i) => {
-    if (current === 0) return count;
+  const inversions = tiles.reduce((acc, elem, i) => {
+    if (elem === 0) return acc;
     for (let j = i + 1; j < tiles.length; j++) {
       if (tiles[j] !== 0 && tiles[i] > tiles[j]) {
-        count++;
+        acc++;
       }
     }
-    return count;
+    return acc;
   }, 0);
   return inversions % 2 === 0;
 };
@@ -41,48 +41,85 @@ const generateRandomTiles = () => {
   return tiles;
 };
 
-const convertTilesToMatrix = (tiles) => {
+const convertToMatrix = (tiles) => {
   return [tiles.slice(0, 3), tiles.slice(3, 6), tiles.slice(6, 9)];
 };
 
 const PuzzleBoard = () => {
   const [tiles, setTiles] = useState(generateRandomTiles());
+  const [selectedAlgorithm, setSelectedAlgorithm] = useState("");
+  const [steps, setSteps] = useState(0);
   const [solutionSteps, setSolutionSteps] = useState([]);
+  const [totalSteps, setTotalSteps] = useState(0);
   //const [algorithm, setAlgorithm] = useState("");
   const [isAnimating, setIsAnimating] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
-  const [steps, setSteps] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const stepIndex = useRef(0);
   const isPausedRef = useRef(isPaused);
   const animationIntervalRef = useRef(null);
+  const finalState = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
   useEffect(() => {
     isPausedRef.current = isPaused;
   }, [isPaused]);
 
   const setFinalState = () => {
-    const finalState = [1, 2, 3, 4, 5, 6, 7, 8, 9];
     setTiles(finalState);
     setIsCompleted(true);
   };
 
-  // Animacija korak po korak
+  const handleAlgorithmSelection = (algorithm) => {
+    setSelectedAlgorithm(algorithm);
+    runAlgorithm(algorithm);
+  };
+
+  const runAlgorithm = async (algorithmEndpoint) => {
+    try {
+      const payload = {
+        start_state: convertToMatrix(tiles),
+        goal_state: [
+          [1, 2, 3],
+          [4, 5, 6],
+          [7, 8, 0],
+        ],
+      };
+
+      const response = await axios.post(
+        `${url}/${algorithmEndpoint}/`,
+        payload
+      );
+      console.log(response.data.steps);
+      if (response.data.steps) {
+        setSolutionSteps(response.data.steps);
+        setTotalSteps(response.data.moves);
+      } else {
+        alert("Resenje nije pronadjeno.");
+      }
+    } catch (error) {
+      console.error(
+        "Greska pri pokretanju algoritma:",
+        error.response?.data || error.message
+      );
+      alert("Proveri backend.");
+    }
+  };
+
   const animateSolution = () => {
     setIsAnimating(true);
     setIsPaused(false);
-    let stepIndex = 0;
     animationIntervalRef.current = setInterval(() => {
       if (!isPausedRef.current) {
-        // Koristi isPausedRef za proveru pauze
-        if (stepIndex < solutionSteps.length) {
-          setTiles(solutionSteps[stepIndex].flat());
-          stepIndex++;
-          setSteps((prevStepCount) => prevStepCount + 1);
+        if (stepIndex.current < solutionSteps.length) {
+          setTiles(solutionSteps[stepIndex.current].flat());
+          stepIndex.current += 1;
+          setSteps((prevStep) => prevStep + 1);
         } else {
           clearInterval(animationIntervalRef.current);
           animationIntervalRef.current = null;
           setIsAnimating(false);
           setFinalState();
+          stepIndex.current = 0;
         }
       }
     }, 700);
@@ -91,10 +128,8 @@ const PuzzleBoard = () => {
   const togglePause = () => {
     setIsPaused((prev) => !prev);
     if (isPausedRef.current) {
-      // Ako je trenutno pauzirano, pokreni interval
       animateSolution();
     } else {
-      // Ako nije pauzirano, pauziraj interval
       if (animationIntervalRef.current) {
         clearInterval(animationIntervalRef.current);
       }
@@ -107,9 +142,10 @@ const PuzzleBoard = () => {
       animationIntervalRef.current = null;
     }
     setIsAnimating(false);
-    setTiles([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    setTiles(finalState);
     const totalSteps = solutionSteps.length;
     setSteps(totalSteps);
+    setSolutionSteps([]);
   };
 
   const handleKeyDown = (e) => {
@@ -127,68 +163,42 @@ const PuzzleBoard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAnimating]);
 
-  // Funkcija za pokretanje algoritma
-  const runAlgorithm = async (algorithmEndpoint) => {
-    try {
-      const payload = {
-        start_state: convertTilesToMatrix(tiles),
-        goal_state: [
-          [1, 2, 3],
-          [4, 5, 6],
-          [7, 8, 0],
-        ],
-      };
-
-      const response = await axios.post(
-        `${url}/${algorithmEndpoint}/`,
-        payload
-      );
-
-      if (response.data.steps) {
-        setSolutionSteps(response.data.steps);
-        //setAlgorithm(algorithmEndpoint.toUpperCase());
-      } else {
-        alert("Rešenje nije pronađeno.");
-      }
-    } catch (error) {
-      console.error(
-        "Greška pri pokretanju algoritma:",
-        error.response?.data || error.message
-      );
-      alert("Došlo je do greške. Proveri backend.");
-    } finally {
-    }
-  };
-
   useEffect(() => {
     if (solutionSteps.length > 0) {
       animateSolution();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solutionSteps]);
 
   const resetGame = () => {
+    if (animationIntervalRef.current) {
+      clearInterval(animationIntervalRef.current);
+      animationIntervalRef.current = null;
+    }
     setTiles(generateRandomTiles());
     setSolutionSteps([]);
     //setAlgorithm("");
     setIsAnimating(false);
     setIsCompleted(false);
+    setTotalSteps(0);
     setSteps(0);
+    setSelectedAlgorithm("");
+    stepIndex.current = 0;
   };
 
   const handleTileClick = (index) => {
+    console.log(index);
     const emptyIndex = tiles.indexOf(0);
     const row = Math.floor(index / 3);
     const col = index % 3;
     const emptyRow = Math.floor(emptyIndex / 3);
     const emptyCol = emptyIndex % 3;
-
-    // Proveri da li je potez validan
     if (
-      (row === emptyRow && Math.abs(col - emptyCol) === 1) || // Susedna kolona
-      (col === emptyCol && Math.abs(row - emptyRow) === 1) // Susedni red
+      (row === emptyRow && Math.abs(col - emptyCol) === 1) ||
+      (col === emptyCol && Math.abs(row - emptyRow) === 1)
     ) {
       const newTiles = [...tiles];
+      console.log(newTiles);
       [newTiles[index], newTiles[emptyIndex]] = [
         newTiles[emptyIndex],
         newTiles[index],
@@ -199,67 +209,70 @@ const PuzzleBoard = () => {
   };
 
   return (
-    <div className="puzzle-container">
+    <div className="pyzzle-container">
       <h1 className="title">Pyzzle</h1>
-      <div className="puzzle-board-container">
+      <p className="subtitle">Choose an algorithm</p>
+      <div className="pyzzle-board-container">
         <div className="algorithm-buttons">
           <button
-            onClick={() => runAlgorithm("bfs")}
-            className="algorithm-button"
+            onClick={() => handleAlgorithmSelection("bfs")}
+            className={`algorithm-button ${
+              selectedAlgorithm === "bfs" ? "selected" : ""
+            }`}
             disabled={isAnimating || isCompleted}
           >
             BFS
           </button>
           <button
-            onClick={() => runAlgorithm("best-first")}
-            className="algorithm-button"
+            onClick={() => handleAlgorithmSelection("best-first")}
+            className={`algorithm-button ${
+              selectedAlgorithm === "best-first" ? "selected" : ""
+            }`}
             disabled={isAnimating || isCompleted}
           >
             Best-first
           </button>
           <button
-            onClick={() => runAlgorithm("a-star")}
-            className="algorithm-button"
+            onClick={() => handleAlgorithmSelection("a-star")}
+            className={`algorithm-button ${
+              selectedAlgorithm === "a-star" ? "selected" : ""
+            }`}
             disabled={isAnimating || isCompleted}
           >
             A*
           </button>
         </div>
-        <div className="puzzle-board">
+        <div className="pyzzle-board">
           {tiles.map((tile, index) => (
             <div
               key={index}
               className={`tile ${tile === 0 ? "empty" : ""}`}
               onClick={() => handleTileClick(index)}
             >
-              {tile !== 0 && (
-                <img
-                  src={tileImages[tile]}
-                  alt={`Tile ${tile}`}
-                  className="tile-image"
-                />
-              )}
+              {tile !== 0 && <img src={images[tile]} alt={`Tile ${tile}`} />}
             </div>
           ))}
         </div>
-        <div className="puzzle-buttons">
+        <div className="pyzzle-buttons">
           <button
-            className="puzzle-buttons-button"
+            className="pyzzle-buttons-button"
             onClick={resetGame}
             disabled={isAnimating}
           >
             New Game
           </button>
           <button
-            className="puzzle-buttons-button"
+            className="pyzzle-buttons-button"
             onClick={togglePause}
             disabled={!isAnimating}
           >
             {isPaused ? "Resume" : "Pause"}
           </button>
         </div>
-        <div className="puzzle-steps">
-          <p>Step: {steps}</p>
+        <div className="pyzzle-steps">
+          <p>
+            Step: {steps} / {totalSteps}
+          </p>
         </div>
       </div>
     </div>
